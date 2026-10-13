@@ -1,0 +1,97 @@
+{
+	"schemaVersion": 1,
+	"basics": {
+		"name": "Alex Morgan",
+		"title": "Senior Software Engineer",
+		"email": "alex.morgan@example.com",
+		"phone": "+1 555 0100",
+		"location": "Denver, CO",
+		"website": "https://example.com/alex-morgan",
+		"links": [
+			{
+				"id": "link-github",
+				"label": "GitHub",
+				"url": "https://github.com/example/alex-morgan"
+			},
+			{
+				"id": "link-linkedin",
+				"label": "LinkedIn",
+				"url": "https://linkedin.com/in/alex-morgan-example"
+			}
+		]
+	},
+	"summary": "TypeScript-focused engineer with ten years building reliable web platforms, developer tools, and document workflows. Comfortable owning features from schema design through production observability.",
+	"experience": [
+		{
+			"id": "exp-northwind",
+			"company": "Northwind Analytics",
+			"role": "Senior Software Engineer",
+			"location": "Remote",
+			"startDate": "2021-03",
+			"current": true,
+			"achievements": [
+				"Led migration of a monolithic reporting app to SvelteKit with measurable build-time improvements.",
+				"Introduced contract tests for PDF exports, reducing document regressions in release QA."
+			]
+		},
+		{
+			"id": "exp-helix",
+			"company": "Helix Systems",
+			"role": "Software Engineer",
+			"location": "Boulder, CO",
+			"startDate": "2017-06",
+			"endDate": "2021-02",
+			"current": false,
+			"achievements": [
+				"Built internal CV and proposal generators used by customer success teams.",
+				"Maintained accessibility baselines for customer-facing dashboards."
+			]
+		}
+	],
+	"education": [
+		{
+			"id": "edu-state",
+			"institution": "Example State University",
+			"degree": "B.S. Computer Science",
+			"location": "Fort Collins, CO",
+			"startDate": "2013",
+			"endDate": "2017",
+			"details": ["Dean's list, 2015–2016"]
+		}
+	],
+	"skills": [
+		{
+			"id": "skill-ts",
+			"name": "TypeScript",
+			"keywords": ["SvelteKit", "Node", "Zod"]
+		},
+		{
+			"id": "skill-docs",
+			"name": "Document tooling",
+			"keywords": ["Playwright", "PDF QA", "Markdown pipelines"]
+		}
+	],
+	"projects": [
+		{
+			"id": "proj-forge",
+			"name": "CV Forge (sample)",
+			"url": "https://example.com/cv-forge",
+			"startDate": "2025-01",
+			"description": "Local-first CV authoring prototype with deterministic PDF checks.",
+			"highlights": ["Canonical schema", "Snapshot acceptance", "Quality report"]
+		}
+	],
+	"certifications": [
+		{
+			"id": "cert-aws",
+			"name": "AWS Certified Developer – Associate",
+			"issuer": "Amazon Web Services",
+			"date": "2023-09"
+		}
+	],
+	"languages": [
+		{ "id": "lang-en", "language": "English", "fluency": "Native" },
+		{ "id": "lang-es", "language": "Spanish", "fluency": "Professional working" }
+	],
+	"customSections": []
+}
