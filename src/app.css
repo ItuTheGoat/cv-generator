@@ -2,6 +2,7 @@
 @plugin 'daisyui' {
 	themes: winter --default;
 }
+<<<<<<< HEAD
 
 @import '@fontsource/source-sans-3/400.css';
 @import '@fontsource/source-sans-3/600.css';
@@ -18,3 +19,5 @@
 		font-family: 'Source Serif 4', Georgia, serif;
 	}
 }
+=======
+>>>>>>> origin/main
