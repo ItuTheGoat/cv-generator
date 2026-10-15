@@ -8,14 +8,20 @@
 	import { JSONEditor, Mode, toTextContent, type Content } from 'svelte-jsoneditor';
 
 	let {
+		isOpen = false,
+		onClose,
 		disabled = false,
 		onrender
 	}: {
+		isOpen?: boolean;
+		onClose?: () => void;
 		disabled?: boolean;
 		onrender: (cv: Cv) => void | Promise<void>;
 	} = $props();
 
-	let fileName = $state<string | null>(null);
+	let dialogEl = $state<HTMLDialogElement | undefined>();
+	let editing = $state(false);
+	let templateLoaded = $state(false);
 	let content = $state<Content>({ text: '' });
 	let report = $state<JsonImportResult | null>(null);
 	let readyCv = $state<Cv | null>(null);
@@ -61,14 +67,48 @@
 	}
 
 	function handleEditorChange(updatedContent: Content) {
+		if (!editing) return;
 		content = updatedContent;
 		clearValidationState();
 	}
 
+	async function ensureTemplateLoaded() {
+		if (templateLoaded) return;
+		const res = await fetch(asset('examples/cv.template.json'));
+		if (!res.ok) throw new Error('Could not load JSON template');
+		content = { text: await res.text() };
+		templateLoaded = true;
+		editing = false;
+		clearValidationState();
+	}
+
+	$effect(() => {
+		if (!browser || !isOpen || !dialogEl) return;
+		void (async () => {
+			try {
+				await ensureTemplateLoaded();
+			} catch (error) {
+				requestError = error instanceof Error ? error.message : 'Could not load JSON template';
+			}
+			if (isOpen && !dialogEl.open) {
+				dialogEl.showModal();
+			}
+		})();
+	});
+
+	function closeDialog() {
+		dialogEl?.close();
+		onClose?.();
+	}
+
+	function startEditing() {
+		editing = true;
+		clearValidationState();
+	}
+
 	async function loadFileIntoEditor(file: File) {
-		fileName = file.name;
-		const text = await file.text();
-		content = { text };
+		editing = true;
+		content = { text: await file.text() };
 		clearValidationState();
 	}
 
@@ -104,212 +144,137 @@
 		}
 	}
 
-	function renderValidated() {
+	async function renderValidated() {
 		if (!readyCv || validating || disabled) return;
-		void onrender(readyCv);
+		await onrender(readyCv);
+		closeDialog();
 	}
 </script>
 
-<section class="json-import" aria-labelledby="json-import-heading">
-	<div class="heading">
-		<h2 id="json-import-heading">JSON import</h2>
-		<p>
-			Download the template, load or edit JSON below, then validate. The preview updates only after
-			valid JSON is rendered.
-		</p>
-	</div>
+{#if isOpen}
+<dialog
+	bind:this={dialogEl}
+	class="modal modal-open"
+	aria-labelledby="json-import-heading"
+	data-testid="json-dialog"
+>
+	<div class="modal-box flex max-h-[min(90vh,52rem)] w-11/12 max-w-5xl flex-col gap-3 p-4 sm:p-6">
+		<header>
+			<h2 id="json-import-heading" class="text-lg font-semibold">JSON import</h2>
+			<p class="mt-1 text-sm text-base-content/70">
+				Validate your CV JSON, then render to update the preview. Choose Edit JSON to change the
+				template.
+			</p>
+		</header>
 
-	<div class="actions">
-		<a
-			href={asset('examples/cv.template.json')}
-			download="cv.template.json"
-			data-testid="json-template-link"
-		>
-			JSON template
-		</a>
-		<a href={asset('examples/alex-morgan.cv.json')} download>Example JSON</a>
-		<label class="file-field">
-			<span class="file-label">JSON file</span>
-			<input
-				{@attach watchJsonFile}
-				type="file"
-				accept="application/json,.json"
-				data-testid="validate-json-input"
+		<div class="flex flex-wrap items-center gap-2">
+			<a
+				href={asset('examples/cv.template.json')}
+				download="cv.template.json"
+				class="btn btn-sm btn-outline"
+				data-testid="json-template-link"
+			>
+				Download template
+			</a>
+			<button
+				type="button"
+				class="btn btn-sm btn-outline"
 				disabled={disabled || validating}
-			/>
-		</label>
-		<button
-			type="button"
-			data-testid="validate-json-btn"
-			disabled={disabled || validating}
-			onclick={() => void validateCurrent()}
-		>
-			Validate
-		</button>
-		<button
-			type="button"
-			data-testid="render-json-btn"
-			disabled={disabled || validating || !readyCv}
-			onclick={renderValidated}
-		>
-			Render validated CV
-		</button>
-	</div>
+				onclick={startEditing}
+				data-testid="edit-json-btn"
+			>
+				Edit JSON
+			</button>
+			<label class="btn btn-sm btn-outline cursor-pointer">
+				JSON file
+				<input
+					{@attach watchJsonFile}
+					type="file"
+					class="hidden"
+					accept="application/json,.json"
+					data-testid="validate-json-input"
+					disabled={disabled || validating}
+				/>
+			</label>
+			<button
+				type="button"
+				class="btn btn-sm btn-outline"
+				data-testid="validate-json-btn"
+				disabled={disabled || validating}
+				onclick={() => void validateCurrent()}
+			>
+				Validate JSON
+			</button>
+			<button
+				type="button"
+				class="btn btn-sm btn-primary"
+				data-testid="render-json-btn"
+				disabled={disabled || validating || !readyCv}
+				onclick={() => void renderValidated()}
+			>
+				Render preview
+			</button>
+		</div>
 
-	<div class="editor-shell" data-testid="json-source-editor">
-		{#if browser}
-			<JSONEditor {content} mode={Mode.text} onChange={handleEditorChange} />
-		{:else}
-			<p class="editor-placeholder">Loading JSON editor…</p>
-		{/if}
-	</div>
-
-	{#if validating}
-		<p class="pending" role="status">Validating JSON…</p>
-	{/if}
-
-	{#if requestError}
-		<p class="report bad" role="alert" data-testid="json-validation-report">{requestError}</p>
-	{:else if report}
 		<div
-			class="report"
-			class:ok={report.ok}
-			class:bad={!report.ok}
-			role={report.ok ? 'status' : 'alert'}
-			data-testid="json-validation-report"
+			class="min-h-64 flex-1 overflow-hidden rounded-box border border-base-300"
+			data-testid="json-source-editor"
 		>
-			{#if report.ok}
-				<p>The JSON in the editor is valid. Render it to update the preview.</p>
+			{#if browser}
+				<JSONEditor
+					{content}
+					mode={Mode.text}
+					readOnly={!editing}
+					onChange={handleEditorChange}
+				/>
 			{:else}
-				<p>
-					{failureSummary[report.kind]} The preview was left unchanged.
-				</p>
-				<ul>
-					{#each report.messages as message, index (index)}
-						<li>{message}</li>
-					{/each}
-				</ul>
+				<p class="p-4 text-sm text-base-content/60">Loading JSON editor…</p>
 			{/if}
 		</div>
-	{/if}
-</section>
+
+		{#if validating}
+			<p class="text-sm text-info" role="status">Validating JSON…</p>
+		{/if}
+
+		{#if requestError}
+			<div role="alert" class="alert alert-error text-sm" data-testid="json-validation-report">
+				<span>{requestError}</span>
+			</div>
+		{:else if report}
+			<div
+				role={report.ok ? 'status' : 'alert'}
+				class="alert text-sm {report.ok ? 'alert-success' : 'alert-error'}"
+				data-testid="json-validation-report"
+			>
+				<div>
+					{#if report.ok}
+						<p>The JSON in the editor is valid. Render it to update the preview.</p>
+					{:else}
+						<p>
+							{failureSummary[report.kind]} The preview was left unchanged.
+						</p>
+						<ul class="mt-2 list-disc pl-5">
+							{#each report.messages as message, index (index)}
+								<li>{message}</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+		<div class="modal-action mt-0">
+			<button type="button" class="btn btn-sm" onclick={closeDialog}>Close</button>
+		</div>
+	</div>
+	<button type="button" class="modal-backdrop" aria-label="Close JSON dialog" onclick={closeDialog}
+	></button>
+</dialog>
+{/if}
 
 <style>
-	.json-import {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
+	[data-testid='json-source-editor'] :global(.jse-main) {
+		min-height: 16rem;
 		height: 100%;
-		min-height: 0;
-		background: #fff;
-		border: 1px solid #e2e8f0;
-		border-radius: 10px;
-		padding: 1rem;
-	}
-
-	.heading h2,
-	.heading p {
-		margin: 0;
-	}
-
-	.heading p {
-		margin-top: 0.35rem;
-		color: #475569;
-	}
-
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-		align-items: center;
-	}
-
-	.file-field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		font: inherit;
-	}
-
-	.file-label {
-		font-size: 0.85rem;
-		color: #475569;
-	}
-
-	.file-field input[type='file'] {
-		font: inherit;
-		max-width: 100%;
-	}
-
-	.file-field,
-	button,
-	a {
-		font: inherit;
-		padding: 0.45rem 0.75rem;
-		border-radius: 6px;
-		border: 1px solid #cbd5e1;
-		background: #fff;
-		color: inherit;
-		text-decoration: none;
-		cursor: pointer;
-	}
-
-	.file-field {
-		padding: 0.35rem 0.75rem;
-	}
-
-	button:disabled,
-	.file-field:has(input:disabled) {
-		cursor: not-allowed;
-		opacity: 0.6;
-	}
-
-	.editor-shell {
-		flex: 1;
-		min-height: 280px;
-		border: 1px solid #e2e8f0;
-		border-radius: 8px;
-		overflow: hidden;
-	}
-
-	.editor-shell :global(.jse-main) {
-		min-height: 100%;
-		height: 100%;
-	}
-
-	.editor-placeholder {
-		margin: 0;
-		padding: 1rem;
-		color: #64748b;
-	}
-
-	.pending {
-		margin: 0;
-		color: #0369a1;
-	}
-
-	.report {
-		margin: 0;
-		padding: 0.75rem;
-		border-radius: 8px;
-	}
-
-	.report p {
-		margin: 0;
-	}
-
-	.report ul {
-		margin: 0.5rem 0 0;
-		padding-left: 1.25rem;
-	}
-
-	.report.ok {
-		background: #f0fdf4;
-		color: #166534;
-	}
-
-	.report.bad {
-		background: #fef2f2;
-		color: #b91c1c;
 	}
 </style>

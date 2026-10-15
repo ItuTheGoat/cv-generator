@@ -2,6 +2,11 @@ import { expect, test } from '@playwright/test';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 
+async function gotoHome(page: import('@playwright/test').Page) {
+	await page.goto('/');
+	await page.waitForLoadState('networkidle');
+}
+
 async function loadFixtureCv(request: import('@playwright/test').APIRequestContext) {
 	const fixturePath = path.join(process.cwd(), 'static/examples/alex-morgan.cv.json');
 	const json = await readFile(fixturePath, 'utf8');
@@ -13,12 +18,18 @@ async function loadFixtureCv(request: import('@playwright/test').APIRequestConte
 }
 
 test.describe('CV Forge workflow', () => {
-	test('home page renders import and preview', async ({ page }) => {
-		await page.goto('/');
+	test('home page renders preview and JSON dialog entry points', async ({ page }) => {
+		await gotoHome(page);
 		await expect(page.getByRole('heading', { name: 'CV Forge' })).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'JSON import' })).toBeVisible();
 		await expect(page.getByRole('heading', { name: 'Preview' })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'JSON import' })).toHaveCount(0);
+		await expect(page.getByTestId('view-json-btn')).toBeVisible();
+		await expect(page.getByTestId('download-json-template-btn')).toBeVisible();
+		await expect(page.getByTestId('render-example-preview-btn')).toBeVisible();
 		await expect(page.getByRole('heading', { name: 'Edit' })).toHaveCount(0);
+
+		await page.getByTestId('view-json-btn').click();
+		await expect(page.getByRole('heading', { name: 'JSON import' })).toBeVisible();
 	});
 
 	test('accepts, generates PDF, and downloads via API workflow', async ({ request }) => {
@@ -78,11 +89,20 @@ test.describe('CV Forge workflow', () => {
 		expect(body.cv.basics.name).toBe('Your Name');
 	});
 
+	test('render example preview loads Alex Morgan', async ({ page }) => {
+		await gotoHome(page);
+		const previewName = page.getByTestId('cv-preview-page').first().getByTestId('cv-preview-name');
+		await page.getByTestId('render-example-preview-btn').click();
+		await expect(previewName).toHaveText('Alex Morgan');
+	});
+
 	test('validates JSON before updating the preview', async ({ page }) => {
-		await page.goto('/');
+		await gotoHome(page);
 		const previewName = page.getByTestId('cv-preview-page').first().getByTestId('cv-preview-name');
 		await expect(previewName).toHaveText('Untitled candidate');
 
+		await page.getByTestId('view-json-btn').click();
+		await expect(page.getByTestId('json-dialog')).toBeVisible();
 		await expect(page.getByTestId('json-source-editor')).toBeVisible();
 		await expect(page.locator('[data-testid="json-source-editor"] .jse-main')).toBeVisible();
 		const input = page.getByTestId('validate-json-input');
@@ -110,6 +130,8 @@ test.describe('CV Forge workflow', () => {
 		await page.getByTestId('render-json-btn').click();
 		await expect(previewName).toHaveText('Alex Morgan');
 
+		await page.getByTestId('view-json-btn').click();
+		await page.getByTestId('edit-json-btn').click();
 		await page.locator('[data-testid="json-source-editor"] .cm-content').click();
 		await page.keyboard.type(' ');
 		await expect(page.getByTestId('render-json-btn')).toBeDisabled();
