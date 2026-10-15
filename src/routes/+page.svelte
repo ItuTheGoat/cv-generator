@@ -1,15 +1,14 @@
 <script lang="ts">
+	import { asset } from '$app/paths';
+	import type { Component } from 'svelte';
 	import CvDocumentPreview from '#lib/components/CvDocumentPreview.svelte';
-	import JsonImportValidator from '#lib/components/JsonImportValidator.svelte';
 	import QualityReport from '#lib/components/QualityReport.svelte';
 	import { computeContentHash } from '#lib/cv/hash.js';
 	import { createEmptyDraft, draftToCanonical } from '#lib/cv/form.js';
 	import { importJson } from '#lib/cv/json-import.js';
-	import { importMarkdown } from '#lib/cv/markdown.js';
 	import { DEFAULT_TEMPLATE_ID } from '#lib/cv/schema.js';
 	import type { Cv } from '#lib/cv/schema.js';
 	import type { QualityCheck } from '#lib/quality/checks.js';
-	import type { UnmappedBlock } from '#lib/cv/markdown.js';
 
 	let cv = $state<Cv>(createEmptyDraft());
 	let acceptance = $state<{ snapshotId: string | null; contentHash: string | null }>({
@@ -19,11 +18,17 @@
 	let liveHash = $state<string | null>(null);
 	let status = $state<string | null>(null);
 	let errorMessage = $state<string | null>(null);
-	let importWarnings = $state<string[]>([]);
-	let unmapped = $state<UnmappedBlock[]>([]);
 	let checks = $state<QualityCheck[]>([]);
 	let downloadAllowed = $state(false);
-	let busy = $state<'accept' | 'pdf' | 'import' | null>(null);
+	let busy = $state<'accept' | 'pdf' | null>(null);
+	let jsonDialogOpen = $state(false);
+	type JsonImportValidatorProps = {
+		isOpen?: boolean;
+		onClose?: () => void;
+		disabled?: boolean;
+		onrender: (cv: Cv) => void | Promise<void>;
+	};
+	let JsonImportValidator = $state<Component<JsonImportValidatorProps> | null>(null);
 
 	function clearAcceptanceState(message?: string) {
 		acceptance = { snapshotId: null, contentHash: null };
@@ -39,12 +44,12 @@
 	async function loadSample() {
 		errorMessage = null;
 		try {
-			const res = await fetch('/examples/alex-morgan.cv.json');
+			const res = await fetch(asset('examples/alex-morgan.cv.json'));
 			if (!res.ok) throw new Error('Could not load sample CV');
 			const result = importJson(await res.text());
 			if (!result.ok) throw new Error(result.messages.join('\n'));
 			cv = result.cv;
-			clearAcceptanceState('Loaded fictional sample CV (Alex Morgan).');
+			clearAcceptanceState('Rendered example preview (Alex Morgan).');
 			await refreshLiveHash();
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'Could not load sample CV';
@@ -112,46 +117,17 @@
 
 	async function renderValidatedJson(next: Cv) {
 		errorMessage = null;
-		importWarnings = [];
-		unmapped = [];
 		cv = next;
 		clearAcceptanceState('Rendered validated JSON CV.');
 		await refreshLiveHash();
 	}
 
-	async function importMarkdownFile(file: File) {
-		busy = 'import';
-		errorMessage = null;
-		try {
-			const result = importMarkdown(await file.text());
-			if (!result.ok) {
-				throw new Error(result.messages.join('\n'));
-			}
-			cv = result.cv;
-			importWarnings = result.warnings ?? [];
-			unmapped = result.unmapped ?? [];
-			clearAcceptanceState('Imported Markdown CV.');
-			await refreshLiveHash();
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'Markdown import failed';
-		} finally {
-			busy = null;
+	async function openJsonDialog() {
+		if (!JsonImportValidator) {
+			const module = await import('#lib/components/JsonImportValidator.svelte');
+			JsonImportValidator = module.default;
 		}
-	}
-
-	function addUnmappedAsCustom(block: UnmappedBlock) {
-		cv = {
-			...cv,
-			customSections: [
-				...cv.customSections,
-				{
-					id: crypto.randomUUID(),
-					title: block.heading,
-					content: block.body.split('\n').filter(Boolean)
-				}
-			]
-		};
-		unmapped = unmapped.filter((b) => b !== block);
+		jsonDialogOpen = true;
 	}
 </script>
 
@@ -159,77 +135,79 @@
 	<title>CV Forge</title>
 </svelte:head>
 
-<main class="app">
-	<header class="hero">
-		<h1>CV Forge</h1>
-		<p>Import a CV, preview it, then accept and export a PDF.</p>
+<main class="mx-auto flex min-h-dvh max-w-[min(100%,1600px)] flex-col gap-4 p-4 sm:p-6">
+	<header class="navbar min-h-0 flex-wrap gap-3 rounded-box border border-base-300 bg-base-100 px-0 py-2">
+		<div class="navbar-start flex min-w-0 flex-1 flex-col items-start gap-0">
+			<h1 class="cv-forge-title text-2xl font-semibold leading-tight sm:text-3xl">CV Forge</h1>
+			<p class="text-sm text-base-content/70">
+				Import JSON, preview your CV, then accept and export a PDF.
+			</p>
+		</div>
+		<div class="navbar-end flex flex-none flex-wrap gap-2">
+			<a
+				href={asset('examples/cv.template.json')}
+				download="cv.template.json"
+				class="btn btn-sm btn-outline"
+				data-testid="download-json-template-btn"
+			>
+				Download JSON template
+			</a>
+			<button
+				type="button"
+				class="btn btn-sm btn-outline"
+				data-testid="view-json-btn"
+				disabled={busy !== null}
+				onclick={openJsonDialog}
+			>
+				View JSON
+			</button>
+			<button
+				type="button"
+				class="btn btn-sm btn-secondary"
+				data-testid="render-example-preview-btn"
+				disabled={busy !== null}
+				onclick={() => void loadSample()}
+			>
+				Render example preview
+			</button>
+		</div>
 	</header>
 
-	<section class="toolbar">
-		<button type="button" data-testid="load-sample-btn" onclick={() => void loadSample()}>
-			Load fictional sample
-		</button>
-		<label class="file-btn">
-			Import Markdown
-			<input
-				type="file"
-				accept="text/markdown,.md"
-				onchange={(e) => {
-					const file = e.currentTarget.files?.[0];
-					if (file) void importMarkdownFile(file);
-				}}
-			/>
-		</label>
-	</section>
-
 	{#if busy}
-		<p class="status" role="status">Working… ({busy})</p>
+		<div role="status" class="alert alert-info py-2 text-sm">
+			<span>Working… ({busy})</span>
+		</div>
 	{/if}
 	{#if status}
-		<p class="status" role="status">{status}</p>
+		<div role="status" class="alert alert-info py-2 text-sm">
+			<span>{status}</span>
+		</div>
 	{/if}
 	{#if errorMessage}
-		<p class="error" role="alert" data-testid="error-banner">{errorMessage}</p>
-	{/if}
-
-	{#if importWarnings.length}
-		<ul class="warnings">
-			{#each importWarnings as warning, index (index)}
-				<li>{warning}</li>
-			{/each}
-		</ul>
-	{/if}
-
-	{#if unmapped.length}
-		<section class="unmapped">
-			<h2>Unmapped import content</h2>
-			{#each unmapped as block (block.heading + block.body)}
-				<article>
-					<h3>{block.heading}</h3>
-					<pre>{block.body}</pre>
-					<button type="button" onclick={() => addUnmappedAsCustom(block)}
-						>Add as custom section</button
-					>
-				</article>
-			{/each}
-		</section>
-	{/if}
-
-	<div class="workspace">
-		<div class="workspace-json">
-			<JsonImportValidator disabled={busy !== null} onrender={renderValidatedJson} />
+		<div role="alert" class="alert alert-error py-2 text-sm" data-testid="error-banner">
+			<span>{errorMessage}</span>
 		</div>
-		<div class="panel workspace-preview">
-			<h2>Preview</h2>
-			<div class="cv-preview-shell">
+	{/if}
+
+	<section class="card card-border bg-base-100 shadow-sm">
+		<div class="card-body gap-4">
+			<h2 class="card-title text-lg">Preview</h2>
+			<div class="min-w-0 overflow-x-auto">
 				<CvDocumentPreview {cv} />
 			</div>
-			<div class="actions">
-				<button type="button" data-testid="accept-btn" disabled={busy !== null} onclick={acceptCv}>
+			<div class="card-actions flex-wrap">
+				<button
+					type="button"
+					class="btn btn-sm btn-outline"
+					data-testid="accept-btn"
+					disabled={busy !== null}
+					onclick={acceptCv}
+				>
 					Accept CV
 				</button>
 				<button
 					type="button"
+					class="btn btn-sm btn-outline"
 					data-testid="generate-pdf-btn"
 					disabled={busy !== null || !acceptance.snapshotId}
 					onclick={generatePdf}
@@ -237,134 +215,29 @@
 					Generate PDF
 				</button>
 			</div>
-			<p class="hash">Content hash: {liveHash ?? '…'}</p>
+			<p class="text-xs text-base-content/60 break-all">Content hash: {liveHash ?? '…'}</p>
 			{#if acceptance.snapshotId}
-				<p class="hash">Accepted snapshot: {acceptance.snapshotId}</p>
+				<p class="text-xs text-base-content/60 break-all">
+					Accepted snapshot: {acceptance.snapshotId}
+				</p>
 			{/if}
 		</div>
-	</div>
+	</section>
 
 	<QualityReport
 		{checks}
 		downloadAllowed={downloadAllowed && Boolean(acceptance.snapshotId)}
 		downloadSnapshotId={acceptance.snapshotId}
 	/>
+
+	{#if JsonImportValidator}
+		<JsonImportValidator
+			isOpen={jsonDialogOpen}
+			onClose={() => {
+				jsonDialogOpen = false;
+			}}
+			disabled={busy !== null}
+			onrender={renderValidatedJson}
+		/>
+	{/if}
 </main>
-
-<style>
-	:global(body) {
-		margin: 0;
-		font-family: system-ui, sans-serif;
-		background: #f8fafc;
-		color: #0f172a;
-	}
-
-	.app {
-		max-width: min(100%, 1600px);
-		margin: 0 auto;
-		padding: 1.5rem;
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-
-	.hero h1 {
-		margin: 0;
-	}
-
-	.toolbar {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-		align-items: center;
-	}
-
-	.file-btn input {
-		display: none;
-	}
-
-	.file-btn,
-	button {
-		font: inherit;
-		padding: 0.45rem 0.75rem;
-		border-radius: 6px;
-		border: 1px solid #cbd5e1;
-		background: #fff;
-		cursor: pointer;
-	}
-
-	.workspace {
-		display: flex;
-		flex-direction: row;
-		align-items: stretch;
-		gap: 1rem;
-		min-width: 0;
-	}
-
-	.workspace-json {
-		flex: 2;
-		min-width: 0;
-	}
-
-	.workspace-preview {
-		flex: 6;
-		min-width: 0;
-	}
-
-	@media (max-width: 960px) {
-		.workspace {
-			flex-direction: column;
-		}
-
-		.workspace-json,
-		.workspace-preview {
-			flex: 1 1 auto;
-			width: 100%;
-		}
-	}
-
-	.panel {
-		background: #fff;
-		border: 1px solid #e2e8f0;
-		border-radius: 10px;
-		padding: 1rem;
-	}
-
-	.actions {
-		display: flex;
-		gap: 0.75rem;
-		margin-top: 1rem;
-	}
-
-	.status {
-		color: #0369a1;
-		margin: 0;
-	}
-
-	.error {
-		color: #b91c1c;
-		background: #fef2f2;
-		padding: 0.75rem;
-		border-radius: 8px;
-		margin: 0;
-	}
-
-	.warnings {
-		margin: 0;
-		padding-left: 1.25rem;
-		color: #854d0e;
-	}
-
-	.unmapped pre {
-		white-space: pre-wrap;
-		background: #f1f5f9;
-		padding: 0.5rem;
-		border-radius: 6px;
-	}
-
-	.hash {
-		font-size: 0.8rem;
-		color: #64748b;
-		word-break: break-all;
-	}
-</style>

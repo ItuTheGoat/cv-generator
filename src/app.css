@@ -2,3 +2,22 @@
 @plugin 'daisyui' {
 	themes: winter --default;
 }
+<<<<<<< HEAD
+
+@import '@fontsource/source-sans-3/400.css';
+@import '@fontsource/source-sans-3/600.css';
+@import '@fontsource/source-serif-4/400.css';
+@import '@fontsource/source-serif-4/600.css';
+
+@layer base {
+	body {
+		@apply bg-base-200 text-base-content font-sans antialiased;
+		font-family: 'Source Sans 3', system-ui, sans-serif;
+	}
+
+	.cv-forge-title {
+		font-family: 'Source Serif 4', Georgia, serif;
+	}
+}
+=======
+>>>>>>> origin/main
